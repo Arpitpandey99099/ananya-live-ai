@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ananya AI - Live Feed</title>
+    <style>
+        :root { --primary: #00d2ff; --bg: #000; }
+        body { font-family: 'Segoe UI', sans-serif; background: #000; margin: 0; overflow: hidden; display: flex; justify-content: center; align-items: center; }
+        #app-container { position: relative; width: 100vw; height: 100vh; overflow: hidden; display: flex; justify-content: center; }
+        #ananya-vid { height: 100vh; width: auto; object-fit: contain; z-index: 0; }
+        .overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0.8) 20%, transparent 50%), linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, transparent 30%); z-index: 1; pointer-events: none; }
+        header { position: absolute; top: 0; left: 0; width: 100%; padding: 20px 5%; z-index: 3; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; }
+        .ui-wrapper { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 90%; max-width: 500px; z-index: 4; display: flex; flex-direction: column; box-sizing: border-box; padding: 20px 0 30px 0; }
+        #chat-box { width: 100%; max-height: 40vh; overflow-y: auto; display: flex; flex-direction: column; scroll-behavior: smooth; margin-bottom: 20px; }
+        #chat-box::-webkit-scrollbar { display: none; }
+        .msg { margin: 8px 0; padding: 14px 18px; border-radius: 24px; max-width: 80%; font-size: 15px; animation: fadeIn 0.3s ease; backdrop-filter: blur(10px); }
+        .user-msg { background: rgba(0, 210, 255, 0.9); color: #000; align-self: flex-end; border-bottom-right-radius: 4px; font-weight: bold; }
+        .ai-msg { background: rgba(26, 26, 26, 0.7); border: 1px solid rgba(255,255,255,0.2); align-self: flex-start; border-bottom-left-radius: 4px; text-shadow: 1px 1px 2px black; line-height: 1.5; color: white; }
+        .controls { display: flex; gap: 12px; width: 100%; align-items: center; background: rgba(0,0,0,0.6); padding: 8px 12px; border-radius: 40px; backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.1); box-sizing: border-box; }
+        input { flex: 1; background: transparent; border: none; padding: 12px 18px; color: white; outline: none; font-size: 16px; }
+        input::placeholder { color: rgba(255,255,255,0.5); }
+        .btn { border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; border-radius: 50%; }
+        #mic-btn { background: rgba(239, 68, 68, 0.7); color: white; width: 50px; height: 50px; font-size: 24px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        #mic-btn.active { background: rgba(34, 197, 94, 1); animation: pulse 1.5s infinite; }
+        #send-btn { background: var(--primary); color: #000; width: 50px; height: 50px; font-size: 22px; box-shadow: 0 4px 10px rgba(0,210,255,0.2); }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.8); } 70% { box-shadow: 0 0 0 12px rgba(34, 197, 94, 0); } 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); } }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <video id="ananya-vid" src="/static/idle.mp4" autoplay loop muted playsinline></video>
+    <div class="overlay"></div>
+
+    <header>
+        <div>
+            <div style="font-weight: bold; font-size: 24px; text-shadow: 2px 2px 4px black; color: white;">Ananya ✨</div>
+            <div style="font-size: 14px; color: #22c55e; text-shadow: 1px 1px 3px black; font-weight: bold;">🔴 Live Stream Active</div>
+        </div>
+        <button style="background:transparent; color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.2); padding: 8px 15px; border-radius: 20px; font-size: 12px; cursor: pointer;" onclick="clearMyData()">Reset Demo</button>
+    </header>
+
+    <div class="ui-wrapper">
+        <div id="chat-box"></div>
+        <div class="controls">
+            <button id="mic-btn" class="btn" onclick="startMic()">🎙️</button>
+            <input type="text" id="user-input" placeholder="Oye, kuch puch..." onkeypress="if(event.key === 'Enter') sendMessage()">
+            <button id="send-btn" class="btn" onclick="sendMessage()">🚀</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- SESSION ID LOGIC ---
+    let mySessionId = localStorage.getItem('ananya_session');
+    if (!mySessionId) {
+        // Agar naya user hai, toh random ID banao
+        mySessionId = 'user_' + Math.random().toString(36).substring(2, 10);
+        localStorage.setItem('ananya_session', mySessionId);
+    }
+
+    function clearMyData() {
+        localStorage.clear();
+        location.reload();
+    }
+
+    const ananyaVid = document.getElementById('ananya-vid');
+    const inputField = document.getElementById('user-input');
+    const chatBox = document.getElementById('chat-box');
+    const micBtn = document.getElementById('mic-btn');
+
+    function startMic() {
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRec) { alert("Bhai, browser mic support nahi kar raha."); return; }
+        const rec = new SpeechRec();
+        rec.lang = 'hi-IN';
+        rec.onstart = () => { micBtn.classList.add('active'); };
+        rec.onresult = (e) => { 
+            inputField.value = e.results[0][0].transcript; 
+            micBtn.classList.remove('active');
+            sendMessage(); 
+        };
+        rec.onerror = (e) => { micBtn.classList.remove('active'); };
+        rec.onend = () => { micBtn.classList.remove('active'); };
+        rec.start();
+    }
+
+    async function sendMessage() {
+        let text = inputField.value.trim();
+        if (!text) return;
+
+        chatBox.innerHTML += `<div class='msg user-msg'>${text}</div>`;
+        inputField.value = ""; chatBox.scrollTop = chatBox.scrollHeight;
+
+        try {
+            // Yahan hum message ke saath apna mySessionId bhi bhej rahe hain
+            let res = await fetch(`/chat?user_message=${encodeURIComponent(text)}&session_id=${mySessionId}`);
+            let data = await res.json();
+            
+            chatBox.innerHTML += `<div class='msg ai-msg'>${data.reply}</div>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            if (data.audio_url) {
+                const audioRes = await fetch(data.audio_url);
+                const blob = await audioRes.blob();
+                let audio = new Audio(URL.createObjectURL(blob));
+                
+                audio.onplay = () => {
+                    ananyaVid.src = "/static/talking.mp4"; 
+                    ananyaVid.play();
+                };
+                
+                audio.onended = () => {
+                    ananyaVid.src = "/static/idle.mp4";    
+                    ananyaVid.play();
+                    URL.revokeObjectURL(audio.src);
+                };
+                audio.play();
+            }
+        } catch (err) { console.error("Request failed:", err); }
+    }
+</script>
+
+</body>
+</html>
